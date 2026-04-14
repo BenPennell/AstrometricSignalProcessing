@@ -25,7 +25,11 @@ matplotlib.rcParams['ytick.labelsize'] = 14
 # default to black
 matplotlib.rcParams['axes.prop_cycle'] = plt.cycler(color=['black'])
 
-# presets for histograms
+# legend
+matplotlib.rcParams['legend.frameon'] = False
+matplotlib.rcParams["legend.handletextpad"] = 0
+
+# presets
 hist_defaults = {
     "histtype": "step",
     "linewidth": 3,
@@ -34,6 +38,11 @@ hist_defaults = {
 hist_cdf = {
     "cumulative": True,
     "density": True
+}
+
+dline = {
+    "linestyle": "--",
+    "color": "r",
 }
 
 # pastel colours for the solution types

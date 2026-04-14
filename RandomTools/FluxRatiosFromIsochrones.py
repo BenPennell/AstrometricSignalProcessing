@@ -8,18 +8,19 @@ warnings.filterwarnings('ignore')
     Script written by Jiadong
 '''
 
-columns = [
-    "Zini", "MH", "logAge", "Mini", "int_IMF", "Mass", "logL", "logTe", "logg", 
-    "label", "McoreTP", "C_O", "period0", "period1", "period2", "period3", "period4", 
-    "pmode", "Mloss", "tau1m", "X", "Y", "Xc", "Xn", "Xo", "Cexcess", "Z", 
-    "mbolmag", "Umag", "Bmag", "Vmag", "Rmag", "Imag", "Jmag", "Hmag", "Kmag"
-]
-
-# Load the data
-df = pd.read_csv('./data/PARSEC_logage_6to10_MH_n2p5_0p6_dwarf.csv')
-
+'''
+    CHOOSE THE IMPORT FILE, FLUX RATIO, AND OUTDIR HERE
+'''
+# load in file
+df = pd.read_csv('PARSEC_logage_6to10_MH_n2p5_0p6_dwarf.csv')
 # Target flux ratio
 flux_ratio_target = 10**(-1)
+# outdir
+outdir = 'mass_ratio_threshold_table_01.csv'
+'''
+    CHOOSE THE IMPORT FILE, FLUX RATIO, AND OUTDIR HERE
+'''
+
 # For secondary to have flux_ratio = 10**(-1.5) relative to primary:
 # Gmag_2 - Gmag_1 = -2.5 * log10(10**(-1.5)) = 2.5
 delta_mag = -2.5 * np.log10(flux_ratio_target)
@@ -142,8 +143,8 @@ if len(results_df) > 0:
     print()
     
     # Also save as CSV
-    pivot.to_csv('./data/mass_ratio_threshold_table_01.csv')
-    print("Table saved to: mass_ratio_threshold_table.csv")
+    pivot.to_csv(outdir)
+    print("Table saved to: " + outdir)
     
     # Print interpretation
     print()

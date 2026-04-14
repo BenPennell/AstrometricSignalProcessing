@@ -124,3 +124,44 @@ def inclination(df):
     )
     
     return inclination
+
+def get_Campbell_elements(df):
+    '''
+    Translate between Campbell elements and Thiele-Innes coefficients. Equations from the appendix of Halbwachs+2023. 
+    Equations for uncertainties can also be found there but are more complicated and not implemented here. 
+    A, B, F, G are Thiele-Innes elements in mas, provided as scalars or arrays.
+    Adapted from Gaiamock, which is adapted from NSSTools 
+    '''
+    A,B,F,G = thiele_innes(df)
+    # Compute wp - Omega and wm - Omega
+    wp_minus_Omega = np.arctan2(B - F, A + G)  # Argument of periapsis + ascending node
+    wm_minus_Omega = np.arctan2(-B - F, A - G)  # Argument of periapsis - ascending node
+
+    # Initial estimates for w and Omega
+    w = (wp_minus_Omega + wm_minus_Omega) / 2.0  # Argument of periapsis
+    Omega = (wp_minus_Omega - wm_minus_Omega) / 2.0  # Longitude of ascending node
+
+    # Ensure Omega is between 0 and pi
+    w = np.where(Omega < 0, w + np.pi, w)  # Adjust w accordingly
+    Omega = np.where(Omega < 0, Omega + np.pi, Omega)  # Adjust Omega by adding pi
+
+    # Calculate tan^2(i/2) using two formulas
+    tan2_i_AG = np.abs((A + G) * np.cos(wm_minus_Omega))
+    tan2_i_BF = np.abs((F - B) * np.sin(wm_minus_Omega))
+
+    # Choose the formula with the larger denominator for stability
+    use_tan2_i_AG = tan2_i_AG > tan2_i_BF
+    inclination = np.where(
+        use_tan2_i_AG,
+        2.0 * np.arctan2(np.sqrt(np.abs((A - G) * np.cos(wp_minus_Omega))), np.sqrt(tan2_i_AG)),
+        2.0 * np.arctan2(np.sqrt(np.abs((B + F) * np.sin(wp_minus_Omega))), np.sqrt(tan2_i_BF))
+    )
+
+    # Ensure w is between 0 and 2*pi
+    w = np.where(w > 2 * np.pi, w - 2 * np.pi, w)
+    w = np.where(w < 0, w + 2 * np.pi, w)
+
+    # Convert to scalars if inputs are scalars
+    if np.isscalar(A) and np.isscalar(B) and np.isscalar(F) and np.isscalar(G):
+        return float(Omega), float(w), float(inclination)
+    return Omega, w, inclination

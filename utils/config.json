@@ -1,9 +1,6 @@
 {
     "gaiamock_path": "../BHPopulation/gaiamock",
     "home": "/home/bepennell/research/AstrometricSignalProcessing",
-    "wrapperpath": "../GaiamockWrapper",
-    "synthdatapath": "../GaiamockWrapper/synthdata",
-    "gridgeneratorpath": "../GridGenerator",
     "data_path": "./data",
     "temp_path": "./temp"
 }
