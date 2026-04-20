@@ -7,7 +7,7 @@ add_project_root(__file__)
 
 from utils.dependencies import *
 
-import_asp_script("GaiamockWrapper", alias="gw")
+asp_import("GaiamockWrapper", alias="gw")
 
 
 def sample_normal(row, label, count=1):

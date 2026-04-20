@@ -23,11 +23,13 @@ matplotlib.rcParams['xtick.labelsize'] = 14
 matplotlib.rcParams['ytick.labelsize'] = 14
 
 # default to black
-matplotlib.rcParams['axes.prop_cycle'] = plt.cycler(color=['black'])
+matplotlib.rcParams['axes.prop_cycle'] = plt.cycler(color=['black', 'firebrick', 'slateblue', "forestgreen"])
 
 # legend
 matplotlib.rcParams['legend.frameon'] = False
-matplotlib.rcParams["legend.handletextpad"] = 0
+matplotlib.rcParams["legend.handletextpad"] = 0.3
+matplotlib.rcParams["legend.handlelength"] = 0.8
+matplotlib.rcParams["legend.fontsize"] = 14
 
 # presets
 hist_defaults = {

@@ -217,6 +217,6 @@ def generate_rolling_average(memory_reduced_catalogue, roll=10000):
     
     return resorted_averages
 
-def generate_q_cutoffs(catalogue, q_cutoff_csv):
-    ms, qs = q_cutoff_csv["Mini"], q_cutoff_csv["-0.0"]
+def generate_q_cutoffs(catalogue, q_cutoff_csv, mh="-0.0"):
+    ms, qs = q_cutoff_csv["Mini"], q_cutoff_csv[mh]
     catalogue["q_max"] = np.interp(catalogue["mass_single"], ms, qs)

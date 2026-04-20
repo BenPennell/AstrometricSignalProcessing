@@ -3,7 +3,7 @@ import inspect
 import sys
 from pathlib import Path
 
-def import_asp_script(module_name, alias="*"):
+def asp_import(module_name, alias="*"):
     repo_root = Path(__file__).resolve().parent.parent
 
     direct_script = repo_root / f"{module_name}.py"

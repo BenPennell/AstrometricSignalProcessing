@@ -22,12 +22,12 @@ if str(folder_a_path) not in sys.path:
     sys.path.append(str(folder_a_path))
     
 import numpy as np
+import pickle
 import matplotlib.pyplot as plt
 from astropy.table import Table, join, vstack
-from astroquery.gaia import Gaia
 import pandas as pd
 from datetime import datetime, date
-import matplotlib
+from utils.asp import asp_import
 
 # for progress bars
 try:

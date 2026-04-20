@@ -22,7 +22,7 @@ outdir = 'mass_ratio_threshold_table_01.csv'
 '''
 
 # For secondary to have flux_ratio = 10**(-1.5) relative to primary:
-# Gmag_2 - Gmag_1 = -2.5 * log10(10**(-1.5)) = 2.5
+# Gmag_2 - Gmag_1 = -2.5 * log10(10**(-1.5))
 delta_mag = -2.5 * np.log10(flux_ratio_target)
 
 # Use logAge = 9.0 (1 Gyr) for main sequence stars

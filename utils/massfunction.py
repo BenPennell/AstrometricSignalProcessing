@@ -65,11 +65,26 @@ def companion_mass(m1,fm):
     m = sympy.symbols("m", real=True) # guarantee real solutions
     m1 = float(m1)
     roots = sympy.solve((C/fm)*m**3 - m**2 - m1**2 - 2*m*m1)
-    try:
-        return float(np.max(roots))
-    except:
-        return 0
-
+    
+    try:    return float(np.max(roots))
+    except: return 0
+    
+def companion_mass_phot(m1, fm, f):
+    '''
+        This time incorporate flux ratio
+    '''
+    m1 = float(m1)
+    f = float(f)
+    fm = float(fm)
+    
+    C = (86400*365.25)**2 * G / (4*np.pi**2) / AU**3 * Msun * m1
+    F = f/(1+f)
+    q = sympy.symbols("q", real=True)
+    roots = sympy.solve((1+q) * (q/(1+q) - F)**3 - fm/C, q)
+    
+    try:    return float(np.max(roots))*m1
+    except: return 0
+    
 def mass_function_error(df):
     A = ufloat(df['a_thiele_innes'], df['a_thiele_innes_error'])
     B = ufloat(df['b_thiele_innes'], df['b_thiele_innes_error'])
