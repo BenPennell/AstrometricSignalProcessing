@@ -131,51 +131,58 @@ c_funcs = gw.generate_cfuncs()
 _GOST_NDP = 3  # RA/Dec rounding
 
 @lru_cache(maxsize=None)
-def _get_gost_cached(ra_r, dec_r):
+def _get_gost_cached(ra_r, dec_r, data_release="dr3"):
     return gw.gaiamock.get_gost_one_position(
-        ra_r, dec_r, data_release="dr3"
+        ra_r, dec_r, data_release=data_release
     )
 
-def get_gost(ra, dec):
+def get_gost(ra, dec, data_release="dr3"):
     return _get_gost_cached(
         round(float(ra), _GOST_NDP),
         round(float(dec), _GOST_NDP),
+        data_release=data_release
     )
 
-def _get_gost_cached_mod(ra_r, dec_r):
+def _get_gost_cached_mod(ra_r, dec_r, data_release="dr3"):
     return gw.gaiamock_mod.get_gost_one_position(
-        ra_r, dec_r, data_release="dr3"
+        ra_r, dec_r, data_release=data_release
     )
 
-def get_gost_mod(ra, dec):
+def get_gost_mod(ra, dec, data_release="dr3"):
     return _get_gost_cached_mod(
         round(float(ra), _GOST_NDP),
         round(float(dec), _GOST_NDP),
+        data_release=data_release
     )
 
 # =============================
 # Function for fetching the scanning law and getting the solution type for a source
 # =============================
 
-def solve_binary(period, q, ecc, inc, w, omega, Tp,
+def solve_binary(period, q, ecc, inc, w, omega, Tp, f,
                 ra, dec, pmra, pmdec, plx, mass, gmag, return_ruwe=False, return_fits=False):
     t = get_gost(ra, dec)
     t_mod = get_gost_mod(ra, dec)
     return gw.rapid_solution_type(period, q, plx, mass,
-                                    gmag, 1e-10, ecc,
+                                    gmag, f, ecc,
                                     inc, w, omega, Tp,
                                     ra, dec, pmra, pmdec,
                                     t, t_mod, c_funcs, return_ruwe=return_ruwe, return_fits=return_fits)
     
-def solve_single(ra, dec, pmra, pmdec, plx, gmag):
-    t = get_gost_mod(ra, dec)
-    return gw.rapid_single_star(ra, dec, pmra, pmdec, plx, gmag, t)
-
+def solve_binary_dr4(period, q, ecc, inc, w, omega, Tp, f,
+                ra, dec, pmra, pmdec, plx, mass, gmag):
+    t = get_gost(ra, dec, data_release="dr4")
+    return gw.dr4_mode_solution_type(period, q, plx, mass,
+                                    gmag, f, ecc,
+                                    inc, w, omega, Tp,
+                                    ra, dec, pmra, pmdec,
+                                    t, c_funcs)
+    
 # =============================
 # Main generator
 # =============================
 
-def create_synthetic_data(object_count, catalogue, fm_max=1e-3,
+def create_synthetic_data(object_count, catalogue, fm_max=1e-3, f_gamma=None, data_release="dr3",
                         mass_model=None, period_model=None, ecc_type="circular",
                         m_lim=(0.01, 0.08), p_lim=(2, 3), p_resolution=100, return_ruwe=False, return_fits=False,
                         save_bprp=True, verbose=True, n_jobs=-1):
@@ -255,12 +262,18 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3,
     # randomly select mass ratios, and then keep resampling
     # until they fall into the restricted range 
     m2 = q_func(object_count)
-    fms = mass_function_explicit(period, mass, m2, f=0)
+    if f_gamma is not None:
+        fs = (m2/mass)**f_gamma # mass-luminosity relationship
+    else:
+        fs = np.ones_like(m2) * (1e-10) # basically no light
+        
+    fms = mass_function_explicit(period, mass, m2, f=fs)
     bad = fms > fm_max
     # if the mass function is too high, we need to reduce the companion mass 
     while np.any(bad):
         m2[bad] = q_func(bad.sum())
-        fms[bad] = mass_function_explicit(period[bad], mass[bad], m2[bad], f=0)
+        fs[bad] = (m2[bad]/mass[bad])**f_gamma if f_gamma is not None else 1e-10
+        fms[bad] = mass_function_explicit(period[bad], mass[bad], m2[bad], f=fs[bad])
         bad = fms > fm_max
 
     # --- eccentricities ---
@@ -279,16 +292,27 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3,
     if verbose:
         pbar = tqdm(total=object_count, desc="Computing Binaries")
 
-    with tqdm_joblib(pbar if verbose else tqdm(disable=True)):
-        results = Parallel(
-            n_jobs=n_jobs,
-            backend="loky"
-        )(
-            delayed(solve_binary)(period[i], m2[i]/mass[i], ecc[i], inc[i], w[i], omega[i], Tp[i],
-                                ra[i], dec[i], pmra[i], pmdec[i],
-                                plx[i], mass[i], gmag[i], return_ruwe=return_ruwe, return_fits=return_fits)
-            for i in range(object_count)
-        )
+    if data_release == "dr4":
+        with tqdm_joblib(pbar if verbose else tqdm(disable=True)):
+            results = Parallel(
+                n_jobs=n_jobs,
+                backend="loky"
+            )(
+                delayed(solve_binary_dr4)(period[i], m2[i]/mass[i], ecc[i], inc[i], w[i], omega[i], Tp[i], fs[i],
+                                    ra[i], dec[i], pmra[i], pmdec[i], plx[i], mass[i], gmag[i])
+                for i in range(object_count)
+            )
+    else:
+        with tqdm_joblib(pbar if verbose else tqdm(disable=True)):
+            results = Parallel(
+                n_jobs=n_jobs,
+                backend="loky"
+            )(
+                delayed(solve_binary)(period[i], m2[i]/mass[i], ecc[i], inc[i], w[i], omega[i], Tp[i], fs[i],
+                                    ra[i], dec[i], pmra[i], pmdec[i],
+                                    plx[i], mass[i], gmag[i], return_ruwe=return_ruwe, return_fits=return_fits)
+                for i in range(object_count)
+            )
 
     # =============================
     # Assemble output
@@ -319,7 +343,9 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3,
             "omega": omega[i],
             "Tp": Tp[i],
         })
-        if return_fits:
+        if data_release == "dr4":
+            out["solution_type"] = results[i]
+        elif return_fits:
             out["solution_type"] = results[i][0]
             out["ruwe"] = results[i][1]
             out["p0"] = results[i][2]
@@ -327,6 +353,8 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3,
         elif return_ruwe:
             out["solution_type"] = results[i][0]
             out["ruwe"] = results[i][1]
+        else:
+            out["solution_type"] = results[i]
             
         outdata.append(out)
 

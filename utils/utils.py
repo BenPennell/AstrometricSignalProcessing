@@ -1,11 +1,52 @@
 import numpy as np
+import pandas as pd
+from scipy.interpolate import interp1d
+from scipy.interpolate import RegularGridInterpolator
+from IPython.display import display
+
+def print_table(table, label=None, dictionary=False):
+    if dictionary:
+        rates = np.zeros(5)
+        for i, soltype in enumerate([0,5,7,9,12]):
+            rates[i] = len(table[[t["solution_type"] == soltype for t in table]])/len(table)*100
+    else:
+        rates = [len(table[[t["solution_type"] == soltype for t in table]])/len(table)*100 for soltype in [0,5,7,9,12]]
+    grid = [
+        rates,
+        [int(grp/100*len(table)) for grp in rates]
+    ]
+    row_labels = ["Rate (%)", "Counts"]
+    col_labels = ["low RUWE", "high RUWE", "Acceleration", "Jerk", "Full Orbit"]
+    df = pd.DataFrame(grid, index=row_labels, columns=col_labels)
+    displaydf = df.style.format(
+        "{:.0f}",
+        subset=pd.IndexSlice["Counts", :]
+    ).format(
+        "{:.2f}",
+        subset=pd.IndexSlice["Rate (%)", :]
+    )
+    
+    if label is not None:
+        displaydf.set_caption(label)
+    
+    display(displaydf)
 
 ### --- ###
-def calculate_orbit_parameter(m, q, w):
+def aap(m, q, w):
     """
         This is lambda
     """
     return q*w*m**(1/3)*(1 + q)**(-2/3)
+
+def astrometric_amplitude_parameter(m, q, w):
+    return aap(m, q, w)
+
+### --- ###
+def w_from_l(m, q, l):
+    """
+        invert lambda to get w
+    """
+    return l / (q * m**(1/3) * (1 + q)**(-2/3))
 
 ### --- ###
 def q_from_l(l, m, w):
@@ -217,6 +258,38 @@ def generate_rolling_average(memory_reduced_catalogue, roll=10000):
     
     return resorted_averages
 
-def generate_q_cutoffs(catalogue, q_cutoff_csv, mh="-0.0"):
+def generate_q_cutoffs(catalogue, df):
+    # import the csv as a pandas dataframe
+    masses = df.iloc[:, 0].values
+    # Column headers (metallicities)
+    metallicities = np.array([float(c) for c in df.columns[1:]])
+
+    # Grid values
+    z_grid = df.iloc[:, 1:].values    
+    Z_filled = z_grid.copy()
+
+    # Interpolate along columns to fill up the empty low-mass, high-metallicity region
+    for j in range(z_grid.shape[1]):
+        col = Z_filled[:, j]
+        mask = ~np.isnan(col)
+        
+        if np.sum(mask) > 2:
+            f = interp1d(masses[mask], col[mask], kind='linear', fill_value='extrapolate')
+            Z_filled[:, j] = f(masses)
+    
+    # create interpolator
+    interp_func = RegularGridInterpolator((masses, metallicities),
+                                        Z_filled,
+                                        method='linear',
+                                        bounds_error=False,
+                                        fill_value=None)
+    
+    # apply to the catalogue
+    M, Z = np.broadcast_arrays(catalogue["mass_single"], catalogue["mh_single"])
+    points = np.stack([M, Z], axis=-1)
+    catalogue["q_max"] = interp_func(points)
+
+def generate_q_cutoffs_simple(catalogue, q_cutoff_csv, mh="-0.0"):
+    # rewrite to interpolate metallicity and mass somehow!!
     ms, qs = q_cutoff_csv["Mini"], q_cutoff_csv[mh]
     catalogue["q_max"] = np.interp(catalogue["mass_single"], ms, qs)

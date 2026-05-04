@@ -28,12 +28,12 @@ SQRT8 = np.sqrt(8)
 def generate_cfuncs():
     return gaiamock_mod.read_in_C_functions()
 
-def generate_scanning_times(ra, dec):
+def generate_scanning_times(ra, dec, data_release="dr3"):
     t = gaiamock.get_gost_one_position(
-        ra, dec, data_release="dr3")
+        ra, dec, data_release=data_release)
 
     t_mod = gaiamock_mod.get_gost_one_position(
-        ra, dec, data_release="dr3")
+        ra, dec, data_release=data_release)
 
     return t, t_mod
 
@@ -79,7 +79,7 @@ def predict_astrometry_luminous_binary(ra, dec, parallax, pmra, pmdec, m1, m2, p
     Lambda_pred = Lambda_com + bias # binary motion
 
     Lambda_pred += epoch_err_per_transit*np.random.randn(len(psi)) # modeled noise
-    
+   
     if phot_g_mean_mag < 13:
         extra_noise = np.random.uniform(0, 0.04)
     else: 
@@ -263,3 +263,50 @@ def rapid_single_star(ra, dec, pmra, pmdec, parallax, phot_g_mean_mag, t, return
         ruwe, mu5, si5 = res
         return  0, ruwe, mu5, si5
     return 0, res # just ruwe
+
+def dr4_mode_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w, omega, Tp, ra, dec, pmra, pmdec, t, c_funcs):
+    '''
+        See my overleaf document: BH3 paper has different cuts for the orbit solutions
+        
+        Also, in DR4 each solution type will be applied to each object. We will assume the operative scheme is that
+        every object is checked for an orbit solution and may be accepted, otherwise a 5-parameter solution is published
+        
+        We'll assume few things get acceleration solutions. 
+        
+        Technically some of these orbit solutions may get accelerating or 5-parameter solutions, but 
+        for now we're going to both assume that's minimal, and understand that even if in DR4 release
+        a 5 or 7 paramter solution is published, this will still demonstrate that a good orbit solution can be fit
+        (which we can do ourselves) and so these brown dwarfs "will be found quickly"
+    '''
+    
+    t_ast_yr, psi, plx_factor, ast_obs, ast_err = predict_astrometry_luminous_binary(ra = ra, dec = dec, parallax = parallax, 
+                    pmra = pmra, pmdec = pmdec, m1 = m1, m2 = q*m1, period = period, Tp = Tp*period, ecc = ecc, 
+                    omega = omega, inc = inc, w = w, phot_g_mean_mag = phot_g_mean_mag, f = f, data_release = "dr4", t=t,
+                    c_funcs = c_funcs)
+    
+    res = gaiamock.fit_orbital_solution_nonlinear(t_ast_yr = t_ast_yr, psi = psi, plx_factor = plx_factor, ast_obs = ast_obs, ast_err = ast_err, c_funcs = c_funcs, L = np.array([10, 0, 0]))
+    
+    # get the linear parameters 
+    period, phi_p, ecc = res
+    chi2, mu_linear = gaiamock.get_astrometric_chi2(t_ast_yr = t_ast_yr, psi = psi, plx_factor = plx_factor, ast_obs = ast_obs, ast_err = ast_err, P = period, phi_p = phi_p, ecc = ecc, c_funcs=c_funcs)
+    ra_off, pmra, dec_off, pmdec, plx, B, G, A, F = mu_linear
+    p0 = [ra_off, dec_off, plx, pmra, pmdec, period, ecc, phi_p, A, B, F, G]
+    
+    errors, a0_mas, sigma_a0_mas, inc_deg = gaiamock.get_uncertainties_at_best_fit_binary_solution(t_ast_yr = t_ast_yr, psi = psi, plx_factor = plx_factor, ast_obs = ast_obs, ast_err = ast_err, p0 = p0, c_funcs = c_funcs)
+    sig_parallax, sig_ecc = errors[2], errors[6]
+    Nobs, nu, nu_unbinned = len(ast_obs), len(ast_obs) - 12, len(ast_obs)*8 - 12
+    chi2_red = chi2/nu
+    
+    F2 = gaiamock.predict_F2_unbinned_data(chi2_red_binned = chi2_red, n_param = 12, N_points = Nobs, Nbin=8)
+    a0_over_err, parallax_over_error = a0_mas/sigma_a0_mas, plx/sig_parallax
+
+    if F2 > 15:
+        return 5
+    if parallax_over_error < np.maximum(15, -208.02*np.log10(period)+548.03):
+        return 5
+    if sig_ecc > 0.2:
+        return 5
+    if a0_over_err < 5: 
+        return 5
+    return 12
+    
