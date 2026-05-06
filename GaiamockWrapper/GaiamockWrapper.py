@@ -121,7 +121,7 @@ def rapid_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w
     t_ast_yr, psi, plx_factor, ast_obs, ast_err = predict_astrometry_luminous_binary(ra = ra, dec = dec, parallax = parallax, 
                     pmra = pmra, pmdec = pmdec, m1 = m1, m2 = q*m1, period = period, Tp = Tp*period, ecc = ecc, 
                     omega = omega, inc = inc, w = w, phot_g_mean_mag = phot_g_mean_mag, f = f, data_release = "dr3", t=t_mod,
-                    c_funcs = c_funcs)
+                    c_funcs = c_funcs, mod=True)
     
     # CHECK RUWE    
     res = check_ruwe(t_ast_yr, psi, plx_factor, ast_obs, ast_err, return_fits=return_fits, mod=True)
@@ -218,7 +218,6 @@ def rapid_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w
     Nobs, nu, nu_unbinned = len(ast_obs), len(ast_obs) - 12, len(ast_obs)*8 - 12
     chi2_red = chi2/nu
     
-    #F2 = np.sqrt(9*nu/2)*(chi2_red**(1/3) + 2/(9*nu) - 1)
     F2 = gaiamock.predict_F2_unbinned_data(chi2_red_binned = chi2_red, n_param = 12, N_points = Nobs, Nbin=8)
     a0_over_err, parallax_over_error = a0_mas/sigma_a0_mas, plx/sig_parallax
 
@@ -264,7 +263,7 @@ def rapid_single_star(ra, dec, pmra, pmdec, parallax, phot_g_mean_mag, t, return
         return  0, ruwe, mu5, si5
     return 0, res # just ruwe
 
-def dr4_mode_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w, omega, Tp, ra, dec, pmra, pmdec, t, c_funcs):
+def dr4_mode_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w, omega, Tp, ra, dec, pmra, pmdec, t, c_funcs, return_statistics=False):
     '''
         See my overleaf document: BH3 paper has different cuts for the orbit solutions
         
@@ -282,7 +281,7 @@ def dr4_mode_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc
     t_ast_yr, psi, plx_factor, ast_obs, ast_err = predict_astrometry_luminous_binary(ra = ra, dec = dec, parallax = parallax, 
                     pmra = pmra, pmdec = pmdec, m1 = m1, m2 = q*m1, period = period, Tp = Tp*period, ecc = ecc, 
                     omega = omega, inc = inc, w = w, phot_g_mean_mag = phot_g_mean_mag, f = f, data_release = "dr4", t=t,
-                    c_funcs = c_funcs)
+                    c_funcs = c_funcs, mod=False)
     
     res = gaiamock.fit_orbital_solution_nonlinear(t_ast_yr = t_ast_yr, psi = psi, plx_factor = plx_factor, ast_obs = ast_obs, ast_err = ast_err, c_funcs = c_funcs, L = np.array([10, 0, 0]))
     
@@ -300,6 +299,11 @@ def dr4_mode_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc
     F2 = gaiamock.predict_F2_unbinned_data(chi2_red_binned = chi2_red, n_param = 12, N_points = Nobs, Nbin=8)
     a0_over_err, parallax_over_error = a0_mas/sigma_a0_mas, plx/sig_parallax
 
+    if return_statistics:
+        ruwe = check_ruwe(t_ast_yr, psi, plx_factor, ast_obs, ast_err, return_fits=False, mod=False)
+        stats = {"ruwe": ruwe, "F2": F2, "a0_over_err": a0_over_err, "parallax_over_error": parallax_over_error, "sig_ecc": sig_ecc}
+        return stats
+    
     if F2 > 15:
         return 5
     if parallax_over_error < np.maximum(15, -208.02*np.log10(period)+548.03):

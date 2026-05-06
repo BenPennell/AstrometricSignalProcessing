@@ -170,13 +170,13 @@ def solve_binary(period, q, ecc, inc, w, omega, Tp, f,
                                     t, t_mod, c_funcs, return_ruwe=return_ruwe, return_fits=return_fits)
     
 def solve_binary_dr4(period, q, ecc, inc, w, omega, Tp, f,
-                ra, dec, pmra, pmdec, plx, mass, gmag):
+                ra, dec, pmra, pmdec, plx, mass, gmag, return_statistics):
     t = get_gost(ra, dec, data_release="dr4")
     return gw.dr4_mode_solution_type(period, q, plx, mass,
                                     gmag, f, ecc,
                                     inc, w, omega, Tp,
                                     ra, dec, pmra, pmdec,
-                                    t, c_funcs)
+                                    t, c_funcs, return_statistics=return_statistics)
     
 # =============================
 # Main generator
@@ -220,7 +220,13 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3, f_gamma=None, da
     ecc_func = {"circular": circular_e, "thermal": thermal_e, "turnover": turnover_e,}.get(ecc_type, circular_e)
 
     # randomly select objects from the catalogue
-    idx = np.random.choice(len(catalogue), object_count, replace=True)
+    # if -1 is supplied, use the whole catalogue. This is so we can do 1-1 comparisons across different models
+    if object_count == -1:
+        idx = np.arange(len(catalogue))
+        object_count = len(catalogue)
+    else:
+        idx = np.random.choice(len(catalogue), object_count, replace=True)
+    
     ra = catalogue["ra"][idx].astype(float)
     dec = catalogue["dec"][idx].astype(float)
     # for now, try with no proper motions. It's fine.
@@ -299,7 +305,7 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3, f_gamma=None, da
                 backend="loky"
             )(
                 delayed(solve_binary_dr4)(period[i], m2[i]/mass[i], ecc[i], inc[i], w[i], omega[i], Tp[i], fs[i],
-                                    ra[i], dec[i], pmra[i], pmdec[i], plx[i], mass[i], gmag[i])
+                                    ra[i], dec[i], pmra[i], pmdec[i], plx[i], mass[i], gmag[i], return_statistics=True)
                 for i in range(object_count)
             )
     else:
@@ -344,7 +350,9 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3, f_gamma=None, da
             "Tp": Tp[i],
         })
         if data_release == "dr4":
-            out["solution_type"] = results[i]
+            # store ruwe and the orbit solution statistics used for making cuts so that we can make cuts ourselves
+            out["summary_statistics"] = results[i]
+            #out["solution_type"] = results[i]
         elif return_fits:
             out["solution_type"] = results[i][0]
             out["ruwe"] = results[i][1]

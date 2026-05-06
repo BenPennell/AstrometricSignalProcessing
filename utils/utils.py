@@ -258,6 +258,7 @@ def generate_rolling_average(memory_reduced_catalogue, roll=10000):
     
     return resorted_averages
 
+### --- ###
 def generate_q_cutoffs(catalogue, df):
     # import the csv as a pandas dataframe
     masses = df.iloc[:, 0].values
@@ -289,7 +290,32 @@ def generate_q_cutoffs(catalogue, df):
     points = np.stack([M, Z], axis=-1)
     catalogue["q_max"] = interp_func(points)
 
+### --- ###
 def generate_q_cutoffs_simple(catalogue, q_cutoff_csv, mh="-0.0"):
     # rewrite to interpolate metallicity and mass somehow!!
     ms, qs = q_cutoff_csv["Mini"], q_cutoff_csv[mh]
     catalogue["q_max"] = np.interp(catalogue["mass_single"], ms, qs)
+
+### --- ###
+def resample_histogram(data, bins, sample_size, parameter):
+    resample = np.random.choice(data, size=sample_size, replace=True)
+    resample_nss = resample[[s["solution_type"] == 12 for s in resample]]
+    param_array = np.array([s[parameter] for s in resample_nss])
+    if parameter == "period": # period ought to be in log space
+        param_array = np.log10(param_array)
+    vals, _ = np.histogram(param_array, bins=bins)
+    return vals/np.sum(vals)*100
+
+### --- ###
+def bootstrap_histogram(data, bins, sample_size, parameter, n_bootstraps=1000):
+    bin_values = np.zeros((len(bins)-1, n_bootstraps))
+    for i in range(n_bootstraps):
+        bin_values[:, i] = resample_histogram(data, bins, sample_size, parameter)
+    return bin_values
+
+### --- ###
+def bootstrap_uncertainties(bin_values, lower_percentile=16, upper_percentile=84):
+    bootstrap_means = np.mean(bin_values, axis=1)
+    yup_err = np.percentile(bin_values, upper_percentile, axis=1) - bootstrap_means
+    ydown_err = bootstrap_means - np.percentile(bin_values, lower_percentile, axis=1)
+    return yup_err, ydown_err
