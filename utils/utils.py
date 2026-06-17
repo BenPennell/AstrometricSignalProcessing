@@ -4,19 +4,53 @@ from scipy.interpolate import interp1d
 from scipy.interpolate import RegularGridInterpolator
 from IPython.display import display
 
+
+G = 6.6743e-11 # m^3 kg^-1 s^-2
+msun_to_kg = 1.988416e30 # kg
+au_to_m = 1.495978707e11 # m
+day_to_s = 60*60*24 # s
+
+def show_result(number, do_print=False, nice=False, units=None, decimals=2):
+    if not do_print:
+        return number
+    output = str(number)
+    if decimals is not None:
+        output = f"{number:.{decimals}f}"
+    if nice:
+        output = output + " " + units if units is not None else output
+    return output
+
+def period(mass, separation, **kwargs):
+    '''
+        mass: in solar masses
+        separation: in AU
+
+        returns: logperiod in LogDays
+    '''
+    return show_result(np.log10(float(np.sqrt(4*np.pi*np.pi*(separation*au_to_m)**3/G/(mass*msun_to_kg))/day_to_s)), units="LogDays", **kwargs)
+
+def separation(mass, logperiod, **kwargs):
+    '''
+        mass: in solar masses
+        logperiod: in LogDays
+        
+        returns: separation in AU
+    '''
+    return show_result(((mass*msun_to_kg)*G*((10**logperiod)*day_to_s)**2/4/np.pi/np.pi)**(1/3)/au_to_m, units="AU", **kwargs)
+
 def print_table(table, label=None, dictionary=False):
     if dictionary:
-        rates = np.zeros(5)
-        for i, soltype in enumerate([0,5,7,9,12]):
-            rates[i] = len(table[[t["solution_type"] == soltype for t in table]])/len(table)*100
+        rates = []
+        for soltype in [0,5,7,9,12]:
+            rates.append(len(table[[t["solution_type"] == soltype for t in table]])/len(table)*100)
     else:
         rates = [len(table[[t["solution_type"] == soltype for t in table]])/len(table)*100 for soltype in [0,5,7,9,12]]
     grid = [
-        rates,
-        [int(grp/100*len(table)) for grp in rates]
+        [100] + rates,
+        [len(table)] + [int(grp/100*len(table)) for grp in rates]
     ]
     row_labels = ["Rate (%)", "Counts"]
-    col_labels = ["low RUWE", "high RUWE", "Acceleration", "Jerk", "Full Orbit"]
+    col_labels = ["All", "low RUWE", "high RUWE", "Acceleration", "Jerk", "Full Orbit"]
     df = pd.DataFrame(grid, index=row_labels, columns=col_labels)
     displaydf = df.style.format(
         "{:.0f}",
@@ -40,6 +74,17 @@ def aap(m, q, w):
 
 def astrometric_amplitude_parameter(m, q, w):
     return aap(m, q, w)
+
+### --- ###
+def al_uncertainty_per_ccd_interp(G):
+    '''
+    (FROM GAIAMOCK)
+    This gives the uncertainty *per CCD* (not per FOV transit), taken from Fig 3 of https://arxiv.org/abs/2206.05439
+    This is the "EDR3 adjusted" line from that Figure, which is already inflated compared to the formal uncertainties.
+    '''
+    G_vals =    [ 4,    5,   6,     7,   8.2,  8.4, 10,    11,    12,  13,    14,   15,   16,   17,   18,   19,  20]
+    sigma_eta = [0.4, 0.35, 0.15, 0.17, 0.23, 0.13,0.13, 0.135, 0.125, 0.13, 0.15, 0.23, 0.36, 0.63, 1.05, 2.05, 4.1]
+    return np.interp(G, G_vals, sigma_eta)
 
 ### --- ###
 def w_from_l(m, q, l):
@@ -93,26 +138,16 @@ def q_from_l_vectorized(l_array, m, w):
 
 def scale_resolution(arr, scale=2, axis=0, even=False):
     """
-    Upscales grid resolution by splitting values evenly along a given axis.
-    Works for N-dimensional arrays.
+        Upscale a numpy array along a given axis by repeating values.
+        If even=True, evenly divide repeated values by the scale to preserve total sum.
     """
-
     arr = np.asarray(arr)
-
-    # Insert a new axis after target axis
     expanded = np.expand_dims(arr, axis + 1)
-
-    # Repeat along new axis
     repeated = np.repeat(expanded, scale, axis=axis + 1)
-
-    # if you want to distribute the row values
     if even:
         repeated = repeated / scale
-
-    # Merge the two axes back
     new_shape = list(arr.shape)
     new_shape[axis] *= scale
-
     return repeated.reshape(new_shape)
 
 ### --- ###
@@ -307,10 +342,41 @@ def resample_histogram(data, bins, sample_size, parameter):
     return vals/np.sum(vals)*100
 
 ### --- ###
-def bootstrap_histogram(data, bins, sample_size, parameter, n_bootstraps=1000):
+def bootstrap_histogram(data, bins, sample_size, parameter, n_bootstraps=1000, max_fm=None):
     bin_values = np.zeros((len(bins)-1, n_bootstraps))
     for i in range(n_bootstraps):
-        bin_values[:, i] = resample_histogram(data, bins, sample_size, parameter)
+        resample = np.random.choice(data, size=sample_size, replace=True)
+        if max_fm is not None:
+            resample_nss = resample[[(s["solution_type"] == 12) & (s["fm"] < max_fm) for s in resample]]
+        else:
+            resample_nss = resample[[(s["solution_type"] == 12) for s in resample]]
+        if parameter == "q":
+            param_array = np.array([s["m2"] / s["mass"] for s in resample_nss])
+        else:
+            param_array = np.array([s[parameter] for s in resample_nss])
+        if parameter == "period": # period ought to be in log space
+            param_array = np.log10(param_array)
+        vals, _ = np.histogram(param_array, bins=bins)
+        bin_values[:, i] = vals/np.sum(vals)*100
+    return bin_values
+
+### --- ###
+def bootstrap_histogram_table(data, bins, sample_size, parameter, n_bootstraps=1000, max_fm=None):
+    bin_values = np.zeros((len(bins)-1, n_bootstraps))
+    for i in range(n_bootstraps):
+        resample = np.random.choice(data, size=sample_size, replace=True)
+        if max_fm is not None:
+            resample_nss = resample[(resample["solution_type"] == 12) & (resample["fm"] < max_fm)]
+        else:
+            resample_nss = resample[resample["solution_type"] == 12]
+        if parameter == "q":
+            param_array = np.array(resample_nss["m2"] / resample_nss["mass"])
+        else:
+            param_array = resample_nss[parameter]
+        if parameter == "period": # period ought to be in log space
+            param_array = np.log10(param_array)
+        vals, _ = np.histogram(param_array, bins=bins)
+        bin_values[:, i] = vals/np.sum(vals)*100
     return bin_values
 
 ### --- ###
@@ -319,3 +385,37 @@ def bootstrap_uncertainties(bin_values, lower_percentile=16, upper_percentile=84
     yup_err = np.percentile(bin_values, upper_percentile, axis=1) - bootstrap_means
     ydown_err = bootstrap_means - np.percentile(bin_values, lower_percentile, axis=1)
     return yup_err, ydown_err
+
+### --- ###
+def histogram_likelihood(bin1_means, bin1_errors, bin2_means, bin2_errors, minimums=(1e-3,1e-3), cutoff=-30):
+    '''
+       this is a little bit nonsense
+       I have two histograms, each with a bin location and a yup_error and ydown_error
+       I want to compute a likelihood by constructing gaussians from these.
+       
+       The way we're going to do this is take each bin and compute the chi2 essentially
+    '''
+    
+    likelihood = 0
+    for i in range(len(bin1_means))[1:]: # skip the first bin because the histogram is noramlised so there's only 6 D.O.F
+        # take the corresponding up or down error depending on the relative location of the means
+        if bin2_means[i] > bin1_means[i]: # if bin 2's mean is greater than bin 1's mean, we want to use the upper error for bin 1
+            sigma1 = bin1_errors[1][i]
+        else:
+            sigma1 = bin1_errors[0][i]
+        if bin1_means[i] > bin2_means[i]: # if bin 1's mean is greater than bin 2's mean, we want to use the upper error for bin 2
+            sigma2 = bin2_errors[1][i]
+        else:
+            sigma2 = bin2_errors[0][i]
+        
+        # the input minimum sigma should correspond to 1/#objects in the sample, which is the minimum error you can get from a histogram
+        sigma1 = max(sigma1, minimums[0]) # set a minimum sigma to avoid numerical issues
+        sigma2 = max(sigma2, minimums[1]) # set a minimum sigma to avoid numerical issues
+        
+        # geometric average probability (not a real likelihood)
+        #prob = np.sqrt(gaussian(bin2_means[i], bin1_means[i], sigma1) * gaussian(bin1_means[i], bin2_means[i], sigma2))
+        # chi2
+        chi2_val = ((bin2_means[i] - bin1_means[i])**2) / (sigma1**2 + sigma2**2)
+        # cutoff gives a minimum probability to remain numerically stable
+        likelihood += np.maximum(-0.5*chi2_val, cutoff)
+    return likelihood

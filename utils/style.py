@@ -23,7 +23,7 @@ matplotlib.rcParams['xtick.labelsize'] = 14
 matplotlib.rcParams['ytick.labelsize'] = 14
 
 # default to black
-matplotlib.rcParams['axes.prop_cycle'] = plt.cycler(color=['black', 'firebrick', 'slateblue', "forestgreen"])
+matplotlib.rcParams['axes.prop_cycle'] = plt.cycler(color=['black', 'firebrick', 'slateblue', "forestgreen", "goldenrod"])
 
 # legend
 matplotlib.rcParams['legend.frameon'] = False

@@ -234,7 +234,7 @@ def create_synthetic_data(object_count, catalogue,
     mass = catalogue["mass_single"][idx].astype(float)
     plx = catalogue["parallax"][idx].astype(float)
     gmag = catalogue["phot_g_mean_mag"][idx].astype(float)
-    cutoffs = catalogue["q_max"][idx].astype(float)
+    q_max = catalogue["q_max"][idx].astype(float)
     
     if save_bprp:
         bprp = catalogue["bp_rp"][idx].astype(float)
@@ -269,11 +269,11 @@ def create_synthetic_data(object_count, catalogue,
     # until they fall into the restricted range 
     q = q_func(nb)
     m2 = q * mass[bin_idx]
-    bad = (m2 < m_lim[0]) | (m2 > m_lim[1]) | (q > cutoffs[bin_idx]) # also apply the q cutoff based on the mass of the primary
+    bad = (q > q_max[bin_idx]) # also apply the q cutoff based on the mass of the primary
     while np.any(bad):
         q[bad] = q_func(bad.sum())
         m2[bad] = q[bad] * mass[bin_idx][bad]
-        bad = (m2 < m_lim[0]) | (m2 > m_lim[1]) | (q > cutoffs[bin_idx])
+        bad = (q > q_max[bin_idx])
 
     # --- eccentricities ---
     ecc = np.array([ecc_func(lp) for lp in logP])
@@ -317,55 +317,75 @@ def create_synthetic_data(object_count, catalogue,
     # Assemble output
     # =============================
 
-    outdata = []
-    b = 0
-    s = 0
-    for i in range(object_count):
-        out = {
-            "ra": ra[i],
-            "dec": dec[i],
-            "pmra": pmra[i],
-            "pmdec": pmdec[i],
-            "parallax": plx[i],
-            "mass": mass[i],
-            "phot_g_mean_mag": gmag[i],
-            "is_binary": bool(binary_mask[i]),
-            "solution_type": 0,
-        }
-        if save_bprp:
-            out["bp_rp"] = bprp[i]
-            
-        if binary_mask[i]:
-            out.update({
-                "period": period[b],
-                "m2": m2[b],
-                "q": q[b],
-                "ecc": ecc[b],
-                "inc": inc[b],
-                "w": w[b],
-                "omega": omega[b],
-                "Tp": Tp[b],
-            })
-            if return_fits:
-                out["solution_type"] = results[b][0]
-                out["ruwe"] = results[b][1]
-                out["p0"] = results[b][2]
-                out["s0"] = results[b][3]
-            elif return_ruwe:
-                out["solution_type"] = results[b][0]
-                out["ruwe"] = results[b][1]
-            b += 1
-        else:
-            if return_fits:
-                out["solution_type"] = results_single[s][0]
-                out["ruwe"] = results_single[s][1]
-                out["p0"] = results_single[s][2]
-                out["s0"] = results_single[s][3]
-            elif return_ruwe:
-                out["solution_type"] = results_single[s][0]
-                out["ruwe"] = results_single[s][1]
-            s += 1
-            
-        outdata.append(out)
+    bmask = binary_mask.astype(bool)
+    smask = ~bmask
 
-    return np.array(outdata)
+    output_table = Table()
+
+    # Base columns
+    output_table["ra"] = ra
+    output_table["dec"] = dec
+    output_table["pmra"] = pmra
+    output_table["pmdec"] = pmdec
+    output_table["parallax"] = plx
+    output_table["mass"] = mass
+    output_table["phot_g_mean_mag"] = gmag
+    output_table["is_binary"] = bmask
+    output_table["q_max"] = q_max
+
+    if save_bprp:
+        output_table["bp_rp"] = bprp
+
+    # Binary-only columns
+    for name, values in {
+        "period": period,
+        "m2": m2,
+        "q": q,
+        "ecc": ecc,
+        "inc": inc,
+        "w": w,
+        "omega": omega,
+        "Tp": Tp,
+    }.items():
+        col = np.full(object_count, np.nan)
+        col[bmask] = values
+        output_table[name] = col
+
+    # Solution info
+    if return_fits:
+        p0 = []
+        s0 = []
+        
+    if return_ruwe or return_fits:
+        n = len(bmask)
+        solution_type = np.zeros(n, dtype=int)
+        ruwe = np.empty(n, dtype=float)
+        
+        for i, r in enumerate(results):
+            j = np.where(bmask)[0][i]
+
+            solution_type[j] = r[0]
+            ruwe[j] = r[1]
+
+            if return_fits:
+                p0.append(r[2])
+                s0.append(r[3])
+            
+        for i, r in enumerate(results_single):
+            j = np.where(smask)[0][i]
+            ruwe[j] = r[1]
+
+            if return_fits:
+                p0.append(r[2])
+                s0.append(r[3])
+
+        output_table["solution_type"] = solution_type
+        output_table["ruwe"] = ruwe
+    else:
+        solution_type = np.zeros(object_count, dtype=int)
+        solution_type[bmask] = results
+        output_table["solution_type"] = solution_type
+
+    if return_fits:
+        return output_table, p0, s0
+    return output_table

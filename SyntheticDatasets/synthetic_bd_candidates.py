@@ -81,45 +81,10 @@ def random_Tp(n=1):
     x = np.random.rand(n) - 0.5
     return float(x[0]) if n == 1 else x
 
-# =============================
-# period, mass ratio, and eccentricity distributions
-# =============================
-
-# eccentricities
-es = np.linspace(0, 1, 100)
-
-e_pdf = np.zeros_like(es)
-e_pdf[1:] = pexp(es[1:], 1)
-e_cdf = np.cumsum(e_pdf / np.sum(e_pdf))
-
-p_therm = pexp(es, 1, val_range=(es[0], es[-1]))
-p_therm /= np.sum(p_therm)
-
-rayleigh_params = (0.38, 0.2)
-p_gaus = gaussian(es, *rayleigh_params)
-p_gaus /= np.sum(p_gaus)
-
-periods_grid = np.linspace(1, 8, 100)
-turnover_params = (3.5, 1)
-turnover_pdf = gaussian(periods_grid, *turnover_params)
-turnover_weight = np.cumsum(turnover_pdf / np.sum(turnover_pdf))
-
-def circular_e(*args):
-    return 0.0
-
-def thermal_e(*args):
-    return np.interp(np.random.rand(), e_cdf, es)
-
-def turnover_e(logP):
-    w = turnover_weight[np.argmin(np.abs(periods_grid - logP))]
-    dist = (1 - w) * p_gaus + w * p_therm
-    cdf = np.cumsum(dist / np.sum(dist))
-    return np.interp(np.random.rand(), cdf, es)
-
 def choose_value(cdf, grid, size):
-    u = np.random.uniform(cdf.min(), cdf.max(), size)
-    return np.interp(u, cdf, grid)
-
+        u = np.random.uniform(cdf.min(), cdf.max(), size)
+        return np.interp(u, cdf, grid)
+    
 # =============================
 # Cache the scanning law for all the object
 # Round the RA/Dec to a certain number of decimal places to reduce the number of unique positions
@@ -160,30 +125,30 @@ def get_gost_mod(ra, dec, data_release="dr3"):
 # =============================
 
 def solve_binary(period, q, ecc, inc, w, omega, Tp, f,
-                ra, dec, pmra, pmdec, plx, mass, gmag, return_ruwe=False, return_fits=False):
-    t = get_gost(ra, dec)
-    t_mod = get_gost_mod(ra, dec)
+                ra, dec, pmra, pmdec, plx, mass, gmag, return_ruwe=False, return_fits=False, data_release="dr3"):
+    t = get_gost(ra, dec, data_release=data_release)
+    t_mod = get_gost_mod(ra, dec, data_release=data_release)
     return gw.rapid_solution_type(period, q, plx, mass,
                                     gmag, f, ecc,
                                     inc, w, omega, Tp,
                                     ra, dec, pmra, pmdec,
-                                    t, t_mod, c_funcs, return_ruwe=return_ruwe, return_fits=return_fits)
-    
+                                    t, t_mod, c_funcs, return_ruwe=return_ruwe, return_fits=return_fits, data_release=data_release)
+
 def solve_binary_dr4(period, q, ecc, inc, w, omega, Tp, f,
-                ra, dec, pmra, pmdec, plx, mass, gmag, return_statistics):
-    t = get_gost(ra, dec, data_release="dr4")
+                ra, dec, pmra, pmdec, plx, mass, gmag, return_statistics, data_release="dr4"):
+    t = get_gost(ra, dec, data_release=data_release)
     return gw.dr4_mode_solution_type(period, q, plx, mass,
                                     gmag, f, ecc,
                                     inc, w, omega, Tp,
                                     ra, dec, pmra, pmdec,
-                                    t, c_funcs, return_statistics=return_statistics)
-    
+                                    t, c_funcs, data_release=data_release, return_statistics=return_statistics)
+
 # =============================
 # Main generator
 # =============================
 
-def create_synthetic_data(object_count, catalogue, fm_max=1e-3, f_gamma=None, data_release="dr3",
-                        mass_model=None, period_model=None, ecc_type="circular",
+def create_synthetic_data(object_count, catalogue, f_gamma=None, dr4_mode=False, data_release="dr3",
+                        mass_model=None, period_model=None, ecc_type="circular", e_params=(0.38,0.2), turnover_params=(3.5,1),
                         m_lim=(0.01, 0.08), p_lim=(2, 3), p_resolution=100, return_ruwe=False, return_fits=False,
                         save_bprp=True, verbose=True, n_jobs=-1):
     
@@ -215,9 +180,6 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3, f_gamma=None, da
         A numpy array of length object_count, where each element is a dictionary containing the properties of the object, including the binary parameters if it is a binary.
         Each object gets the field "is_binary" which is True for binaries and False for singles, and "solution_type" which is 0,5,7,9, or 12.
     '''
-        
-    # choose which of the three eccentricity functions is called for
-    ecc_func = {"circular": circular_e, "thermal": thermal_e, "turnover": turnover_e,}.get(ecc_type, circular_e)
 
     # randomly select objects from the catalogue
     # if -1 is supplied, use the whole catalogue. This is so we can do 1-1 comparisons across different models
@@ -264,23 +226,55 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3, f_gamma=None, da
         def exponential_q(count):
             return np.array([np.interp(np.random.rand(), q_cdf, qs) for _ in range(count)])   
         q_func = exponential_q
+
+    # --- eccentricities ---
+    es = np.linspace(0, 1, 100)
+
+    e_pdf = np.zeros_like(es)
+    e_pdf[1:] = pexp(es[1:], 1)
+    e_cdf = np.cumsum(e_pdf / np.sum(e_pdf))
+
+    p_therm = pexp(es, 1, val_range=(es[0], es[-1]))
+    p_therm /= np.sum(p_therm)
+
+    p_gaus = gaussian(es, *e_params)
+    p_gaus /= np.sum(p_gaus)
+
+    periods_grid = np.linspace(1, 8, 100)
+    turnover_pdf = gaussian(periods_grid, *turnover_params)
+    turnover_weight = np.cumsum(turnover_pdf / np.sum(turnover_pdf))
+
+    def circular_e(*args):
+        return 0.0
+
+    def thermal_e(*args):
+        return np.interp(np.random.rand(), e_cdf, es)
+
+    def turnover_e(logP):
+        w = turnover_weight[np.argmin(np.abs(periods_grid - logP))]
+        dist = (1 - w) * p_gaus + w * p_therm
+        cdf = np.cumsum(dist / np.sum(dist))
+        return np.interp(np.random.rand(), cdf, es)
+    
+    # choose which of the three eccentricity functions is called for
+    ecc_func = {"circular": circular_e, "thermal": thermal_e, "turnover": turnover_e,}.get(ecc_type, circular_e)
         
     # randomly select mass ratios, and then keep resampling
     # until they fall into the restricted range 
-    m2 = q_func(object_count)
+    m2 = q_func(object_count)    
     if f_gamma is not None:
         fs = (m2/mass)**f_gamma # mass-luminosity relationship
     else:
         fs = np.ones_like(m2) * (1e-10) # basically no light
-        
-    fms = mass_function_explicit(period, mass, m2, f=fs)
-    bad = fms > fm_max
-    # if the mass function is too high, we need to reduce the companion mass 
-    while np.any(bad):
-        m2[bad] = q_func(bad.sum())
-        fs[bad] = (m2[bad]/mass[bad])**f_gamma if f_gamma is not None else 1e-10
-        fms[bad] = mass_function_explicit(period[bad], mass[bad], m2[bad], f=fs[bad])
-        bad = fms > fm_max
+    fms = mass_function_reduced(mass, m2, f=fs)
+    
+    # bad = fms > fm_max
+    # # if the mass function is too high, we need to reduce the companion mass 
+    # while np.any(bad):
+    #     m2[bad] = q_func(bad.sum())
+    #     fs[bad] = (m2[bad]/mass[bad])**f_gamma if f_gamma is not None else 1e-10
+    #     fms[bad] = mass_function_explicit(period[bad], mass[bad], m2[bad], f=fs[bad])
+    #     bad = fms > fm_max
 
     # --- eccentricities ---
     ecc = np.array([ecc_func(lp) for lp in logP])
@@ -298,14 +292,14 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3, f_gamma=None, da
     if verbose:
         pbar = tqdm(total=object_count, desc="Computing Binaries")
 
-    if data_release == "dr4":
+    if dr4_mode:
         with tqdm_joblib(pbar if verbose else tqdm(disable=True)):
             results = Parallel(
                 n_jobs=n_jobs,
                 backend="loky"
             )(
                 delayed(solve_binary_dr4)(period[i], m2[i]/mass[i], ecc[i], inc[i], w[i], omega[i], Tp[i], fs[i],
-                                    ra[i], dec[i], pmra[i], pmdec[i], plx[i], mass[i], gmag[i], return_statistics=True)
+                                    ra[i], dec[i], pmra[i], pmdec[i], plx[i], mass[i], gmag[i], data_release=data_release, return_statistics=True)
                 for i in range(object_count)
             )
     else:
@@ -316,7 +310,7 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3, f_gamma=None, da
             )(
                 delayed(solve_binary)(period[i], m2[i]/mass[i], ecc[i], inc[i], w[i], omega[i], Tp[i], fs[i],
                                     ra[i], dec[i], pmra[i], pmdec[i],
-                                    plx[i], mass[i], gmag[i], return_ruwe=return_ruwe, return_fits=return_fits)
+                                    plx[i], mass[i], gmag[i], data_release=data_release, return_ruwe=return_ruwe, return_fits=return_fits)
                 for i in range(object_count)
             )
 
@@ -324,46 +318,57 @@ def create_synthetic_data(object_count, catalogue, fm_max=1e-3, f_gamma=None, da
     # Assemble output
     # =============================
 
-    outdata = []
-    for i in range(object_count):
-        out = {
-            "ra": ra[i],
-            "dec": dec[i],
-            "pmra": pmra[i],
-            "pmdec": pmdec[i],
-            "parallax": plx[i],
-            "mass": mass[i],
-            "phot_g_mean_mag": gmag[i],
-            "solution_type": 0,
-        }
-        if save_bprp:
-            out["bp_rp"] = bprp[i]
-            
-        # add binary information
-        out.update({
-            "period": period[i],
-            "m2": m2[i],
-            "ecc": ecc[i],
-            "inc": inc[i],
-            "w": w[i],
-            "omega": omega[i],
-            "Tp": Tp[i],
-        })
-        if data_release == "dr4":
-            # store ruwe and the orbit solution statistics used for making cuts so that we can make cuts ourselves
-            out["summary_statistics"] = results[i]
-            #out["solution_type"] = results[i]
-        elif return_fits:
-            out["solution_type"] = results[i][0]
-            out["ruwe"] = results[i][1]
-            out["p0"] = results[i][2]
-            out["s0"] = results[i][3]
-        elif return_ruwe:
-            out["solution_type"] = results[i][0]
-            out["ruwe"] = results[i][1]
-        else:
-            out["solution_type"] = results[i]
-            
-        outdata.append(out)
+    output_table = Table()
+    
+    # Base columns
+    output_table["ra"] = ra
+    output_table["dec"] = dec
+    output_table["pmra"] = pmra
+    output_table["pmdec"] = pmdec
+    output_table["parallax"] = plx
+    output_table["mass"] = mass
+    output_table["phot_g_mean_mag"] = gmag
+    
+    if save_bprp:
+        output_table["bp_rp"] = bprp
+        
+    # Binary info columns
+    output_table["period"] = period
+    output_table["m2"] = m2
+    output_table["ecc"] = ecc
+    output_table["inc"] = inc
+    output_table["w"] = w
+    output_table["omega"] = omega
+    output_table["Tp"] = Tp
+    output_table["fm"] = fms
+    output_table["f"] = fs
+    
+    if dr4_mode:
+        # store ruwe and the orbit solution statistics used for making cuts so that we can make cuts ourselves
+        # it seems like it'll just be easiest to store them seperately
+        return output_table, results
+    
+    # Solution info
+    if return_fits:
+        p0 = []
+        s0 = []
+    
+    if return_ruwe or return_fits:
+        solution_type = np.zeros(object_count, dtype=int)
+        ruwe = np.empty(object_count, dtype=float)
+        for i, r in enumerate(results):
+            solution_type[i] = r[0]
+            ruwe[i] = r[1]
 
-    return np.array(outdata)
+            if return_fits:
+                p0.append(r[2])
+                s0.append(r[3])
+        output_table["solution_type"] = solution_type
+        output_table["ruwe"] = ruwe
+    else:
+        solution_types = np.array(results, dtype=int)
+        output_table["solution_type"] = solution_types
+    
+    if return_fits:
+        return output_table, p0, s0
+    return output_table

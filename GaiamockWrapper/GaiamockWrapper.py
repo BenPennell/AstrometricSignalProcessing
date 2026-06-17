@@ -80,7 +80,7 @@ def predict_astrometry_luminous_binary(ra, dec, parallax, pmra, pmdec, m1, m2, p
 
     Lambda_pred += epoch_err_per_transit*np.random.randn(len(psi)) # modeled noise
    
-    if phot_g_mean_mag < 13:
+    if phot_g_mean_mag < 13 and not mod:
         extra_noise = np.random.uniform(0, 0.04)
     else: 
         extra_noise = 0
@@ -116,11 +116,12 @@ def check_ruwe(t_ast_yr, psi, plx_factor, ast_obs, ast_err, mod=True, return_fit
             return ruwe, mu, sigma_mu
         return ruwe  
     
-def rapid_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w, omega, Tp, ra, dec, pmra, pmdec, t, t_mod, c_funcs, skip_full=False, return_ruwe=False, return_fits=False):
+def rapid_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w, omega, Tp, ra, dec, pmra, pmdec, t, t_mod, 
+                        c_funcs, skip_full=False, return_ruwe=False, return_fits=False, data_release="dr3"):
     # COMPUTE ASTROMETRY, with gaiamock_mod, so use t_mod
     t_ast_yr, psi, plx_factor, ast_obs, ast_err = predict_astrometry_luminous_binary(ra = ra, dec = dec, parallax = parallax, 
                     pmra = pmra, pmdec = pmdec, m1 = m1, m2 = q*m1, period = period, Tp = Tp*period, ecc = ecc, 
-                    omega = omega, inc = inc, w = w, phot_g_mean_mag = phot_g_mean_mag, f = f, data_release = "dr3", t=t_mod,
+                    omega = omega, inc = inc, w = w, phot_g_mean_mag = phot_g_mean_mag, f = f, data_release = data_release, t=t_mod,
                     c_funcs = c_funcs, mod=True)
     
     # CHECK RUWE    
@@ -145,7 +146,7 @@ def rapid_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w
     #                     c_funcs = c_funcs, mod=True)
     t_ast_yr, psi, plx_factor, ast_obs, ast_err = predict_astrometry_luminous_binary(ra = ra, dec = dec, parallax = parallax, 
                         pmra = pmra, pmdec = pmdec, m1 = m1, m2 = q*m1, period = period, Tp = Tp*period, ecc = ecc, 
-                        omega = omega, inc = inc, w = w, phot_g_mean_mag = phot_g_mean_mag, f = f, data_release = "dr3", t=t,
+                        omega = omega, inc = inc, w = w, phot_g_mean_mag = phot_g_mean_mag, f = f, data_release = data_release, t=t,
                         c_funcs = c_funcs, mod=False)
     
     # NVISIBILITY PERIODS
@@ -223,17 +224,23 @@ def rapid_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w
 
     if (F2 < 25) and (a0_over_err > 158/np.sqrt(period)) and (a0_over_err > 5) and (parallax_over_error > 20000/period) and (sig_ecc < 0.079*np.log(period)-0.244):
         if return_fits:                
-            return 12, ruwe, p0, errors
+            return 12, ruwe, p0, {"F2": F2, "a0_over_err": a0_over_err, "parallax_over_error": parallax_over_error, "sig_ecc": sig_ecc} # errors
         elif return_ruwe:
             return 12, ruwe
         return 12
     
     # SOLTYPE 5 - if nothing else worked
     if return_fits:                
-            return 5, ruwe, mu5, si5
+            return 5, ruwe, p0, {"F2": F2, "a0_over_err": a0_over_err, "parallax_over_error": parallax_over_error, "sig_ecc": sig_ecc} # mu5, si5
     elif return_ruwe:
         return 5, ruwe
     return 5
+
+def rapid_solution_type_wrapper(source, t, t_mod, c_funcs, **kwargs):
+    return rapid_solution_type(ra = source['ra'], dec = source['dec'], parallax = source['parallax'], pmra = source['pmra'], pmdec = source['pmdec'], 
+                               m1 = source['m1'], phot_g_mean_mag = source['phot_g_mean_mag'], f = source['f'], period = source['period'], q = source['q'], 
+                               ecc = source['ecc'], inc = source['inc'], w = source['w'], omega = source['omega'], Tp = source['Tp'], 
+                               t=t, t_mod=t_mod, c_funcs=c_funcs, **kwargs)
 
 def rapid_single_star(ra, dec, pmra, pmdec, parallax, phot_g_mean_mag, t, return_fits=False):    
     # always uses gaiamock_mod
@@ -243,17 +250,18 @@ def rapid_single_star(ra, dec, pmra, pmdec, parallax, phot_g_mean_mag, t, return
     
     t_ast_yr = gaiamock_mod.rescale_times_astrometry(jd = jds, data_release = "dr3")
 
-    epoch_err_per_transit = gaiamock_mod.get_realistic_epoch_astrometry_errors(ra, dec, phot_g_mean_mag)
-    epoch_err_per_transit_expect = gaiamock_mod.al_uncertainty_per_ccd_interp(G = phot_g_mean_mag)
+    epoch_err_per_transit = gaiamock_mod.get_realistic_epoch_astrometry_errors(ra, dec, phot_g_mean_mag) # np.random.uniform(0, 0.04) # just always do it
+    epoch_err_per_transit_expect = gaiamock_mod.al_uncertainty_per_ccd_interp(G = phot_g_mean_mag) #+ np.random.uniform(0, 0.04)
     
     Lambda_pred = pmra*t_ast_yr*np.sin(psi) + pmdec*t_ast_yr*np.cos(psi) + parallax*plx_factor 
-    Lambda_pred += epoch_err_per_transit*np.random.randn(len(psi)) # modeled noise
+    Lambda_pred += epoch_err_per_transit*np.random.randn(len(psi))
 
-    if phot_g_mean_mag < 13:
-        extra_noise = np.random.uniform(0, 0.04)
-    else: 
-        extra_noise = 0
-    Lambda_pred += extra_noise*np.random.randn(len(psi)) # unmodeled noise
+    # if phot_g_mean_mag < 13:
+    #     extra_noise = np.random.uniform(0, 0.04)
+    # else: 
+    #     extra_noise = 0
+    
+    # Lambda_pred += extra_noise*np.random.randn(len(psi)) # unmodeled noise
     
     ast_err = epoch_err_per_transit_expect*np.ones(len(Lambda_pred))
     
@@ -261,9 +269,9 @@ def rapid_single_star(ra, dec, pmra, pmdec, parallax, phot_g_mean_mag, t, return
     if return_fits:
         ruwe, mu5, si5 = res
         return  0, ruwe, mu5, si5
-    return 0, res # just ruwe
+    return 0, res # this will just be RUWE because we passed return_fits=False into check_ruwe()
 
-def dr4_mode_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w, omega, Tp, ra, dec, pmra, pmdec, t, c_funcs, return_statistics=False):
+def dr4_mode_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w, omega, Tp, ra, dec, pmra, pmdec, t, c_funcs, data_release="dr4", return_statistics=False):
     '''
         See my overleaf document: BH3 paper has different cuts for the orbit solutions
         
@@ -280,7 +288,7 @@ def dr4_mode_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc
     
     t_ast_yr, psi, plx_factor, ast_obs, ast_err = predict_astrometry_luminous_binary(ra = ra, dec = dec, parallax = parallax, 
                     pmra = pmra, pmdec = pmdec, m1 = m1, m2 = q*m1, period = period, Tp = Tp*period, ecc = ecc, 
-                    omega = omega, inc = inc, w = w, phot_g_mean_mag = phot_g_mean_mag, f = f, data_release = "dr4", t=t,
+                    omega = omega, inc = inc, w = w, phot_g_mean_mag = phot_g_mean_mag, f = f, data_release = data_release, t=t,
                     c_funcs = c_funcs, mod=False)
     
     res = gaiamock.fit_orbital_solution_nonlinear(t_ast_yr = t_ast_yr, psi = psi, plx_factor = plx_factor, ast_obs = ast_obs, ast_err = ast_err, c_funcs = c_funcs, L = np.array([10, 0, 0]))
@@ -302,7 +310,7 @@ def dr4_mode_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc
     if return_statistics:
         ruwe = check_ruwe(t_ast_yr, psi, plx_factor, ast_obs, ast_err, return_fits=False, mod=False)
         stats = {"ruwe": ruwe, "F2": F2, "a0_over_err": a0_over_err, "parallax_over_error": parallax_over_error, "sig_ecc": sig_ecc}
-        return stats
+        return p0, stats
     
     if F2 > 15:
         return 5

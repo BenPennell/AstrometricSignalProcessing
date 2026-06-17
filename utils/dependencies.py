@@ -24,6 +24,7 @@ if str(folder_a_path) not in sys.path:
 import numpy as np
 import pickle
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 from astropy.table import Table, join, vstack
 import pandas as pd
 from datetime import datetime, date
