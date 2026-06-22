@@ -1,3 +1,4 @@
+from matplotlib.table import table
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
@@ -38,7 +39,7 @@ def separation(mass, logperiod, **kwargs):
     '''
     return show_result(((mass*msun_to_kg)*G*((10**logperiod)*day_to_s)**2/4/np.pi/np.pi)**(1/3)/au_to_m, units="AU", **kwargs)
 
-def print_table(table, label=None, dictionary=False):
+def print_table(table, label=None, dictionary=False, print_latex=False):
     if dictionary:
         rates = []
         for soltype in [0,5,7,9,12]:
@@ -63,6 +64,11 @@ def print_table(table, label=None, dictionary=False):
     if label is not None:
         displaydf.set_caption(label)
     
+    if print_latex:
+        rate_row = "Rate (\\%) & " + " & ".join(f"{r:.2f}" for r in rates) + r" \\"
+        count_row = "Count & " + " & ".join(f"{int(r/100*len(table))}" for r in rates) + r" \\"
+        print(rate_row)
+        print(count_row)
     display(displaydf)
 
 ### --- ###
