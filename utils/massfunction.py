@@ -106,6 +106,26 @@ def mass_function_error_quick(df):
     fm = (a0_mas**3 * 365.25**2) / (period**2 * parallax**3)
     return fm
 
+def companion_mass_error(df, sample_count=100):
+    mass_function_error = mass_function_error_quick(df)
+    
+    companion_masses = []
+    for fm in np.random.normal(loc=mass_function_error.nominal_value, scale=mass_function_error.std_dev, size=sample_count):
+        companion_masses.append(companion_mass(df["mass_single"], fm))
+    companion_masses = np.array(companion_masses)
+    return np.mean(companion_masses), np.std(companion_masses)
+
+def companion_mass_alternate_error(df):
+    mass_function_error = mass_function_error(df)
+    peak_fm = mass_function_error.nominal_value
+    width_fm = mass_function_error.std_dev
+    
+    low_mass = companion_mass(df["mass_single"], peak_fm - width_fm)
+    middle_mass = companion_mass(df["mass_single"], peak_fm)
+    high_mass = companion_mass(df["mass_single"], peak_fm + width_fm)
+    
+    return low_mass, middle_mass, high_mass
+
 def thiele_innes(df):
     return df[['a_thiele_innes','b_thiele_innes','f_thiele_innes','g_thiele_innes']]
 

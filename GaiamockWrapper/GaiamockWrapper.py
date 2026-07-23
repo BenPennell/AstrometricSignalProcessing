@@ -224,14 +224,14 @@ def rapid_solution_type(period, q, parallax, m1, phot_g_mean_mag, f, ecc, inc, w
 
     if (F2 < 25) and (a0_over_err > 158/np.sqrt(period)) and (a0_over_err > 5) and (parallax_over_error > 20000/period) and (sig_ecc < 0.079*np.log(period)-0.244):
         if return_fits:                
-            return 12, ruwe, p0, {"F2": F2, "a0_over_err": a0_over_err, "parallax_over_error": parallax_over_error, "sig_ecc": sig_ecc} # errors
+            return 12, ruwe, p0, {"errors": errors, "F2": F2, "a0_over_err": a0_over_err, "parallax_over_error": parallax_over_error, "sig_ecc": sig_ecc} # errors
         elif return_ruwe:
             return 12, ruwe
         return 12
     
     # SOLTYPE 5 - if nothing else worked
     if return_fits:                
-            return 5, ruwe, p0, {"F2": F2, "a0_over_err": a0_over_err, "parallax_over_error": parallax_over_error, "sig_ecc": sig_ecc} # mu5, si5
+            return 5, ruwe, p0, {"errors": errors, "F2": F2, "a0_over_err": a0_over_err, "parallax_over_error": parallax_over_error, "sig_ecc": sig_ecc} # mu5, si5
     elif return_ruwe:
         return 5, ruwe
     return 5

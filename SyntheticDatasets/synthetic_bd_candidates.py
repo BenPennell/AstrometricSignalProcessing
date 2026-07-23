@@ -22,7 +22,8 @@ from pathlib import Path
 from functools import lru_cache
 from joblib import Parallel, delayed, parallel
 from contextlib import contextmanager
-
+from scipy.stats import norm
+from scipy.special import ndtr
 
 # Make this module importable as "synthetic_bd_candidates" in spawned workers.
 _THIS_FILE = Path(__file__).resolve()
@@ -84,7 +85,16 @@ def random_Tp(n=1):
 def choose_value(cdf, grid, size):
         u = np.random.uniform(cdf.min(), cdf.max(), size)
         return np.interp(u, cdf, grid)
-    
+
+### ECCENTRICITIES ###
+def generate_loc_and_width(ebar, sbar, alpha, beta, gamma, delta, eta, zeta, mass_ratio, period_ratio, q_ratio):
+    loc = ebar + alpha*mass_ratio + beta*period_ratio + gamma*q_ratio
+    width = sbar + delta*mass_ratio + eta*period_ratio + zeta*q_ratio
+    return loc, width
+
+def generate_gaussian_pdf(mu, sigma, eccentricity_bins):
+    return np.diff(ndtr((eccentricity_bins - mu) / sigma)) / (ndtr((1.0 - mu) / sigma) - ndtr((0.0 - mu) / sigma))
+
 # =============================
 # Cache the scanning law for all the object
 # Round the RA/Dec to a certain number of decimal places to reduce the number of unique positions
@@ -148,7 +158,7 @@ def solve_binary_dr4(period, q, ecc, inc, w, omega, Tp, f,
 # =============================
 
 def create_synthetic_data(object_count, catalogue, f_gamma=None, dr4_mode=False, data_release="dr3",
-                        mass_model=None, period_model=None, ecc_type="circular", e_params=(0.38,0.2), turnover_params=(3.5,1),
+                        mass_model=None, period_model=None, ecc_type="circular", e_params=(0.38,0.2), turnover_params=(3.5,1), dependant_params=None,
                         m_lim=(0.01, 0.08), p_lim=(2, 3), p_resolution=100, return_ruwe=False, return_fits=False,
                         save_bprp=True, verbose=True, n_jobs=-1):
     
@@ -256,8 +266,15 @@ def create_synthetic_data(object_count, catalogue, f_gamma=None, dr4_mode=False,
         cdf = np.cumsum(dist / np.sum(dist))
         return np.interp(np.random.rand(), cdf, es)
     
+    def dependant_eccentricity(ebar, sbar, alpha, beta, gamma, delta, eta, zeta, mass, period, mass_ratio, reference_mass, reference_period, reference_mass_ratio):
+        loc, width = generate_loc_and_width(ebar, sbar, alpha, beta, gamma, delta, eta, zeta, 
+                                            np.log(mass)-np.log(reference_mass), np.log(period)-np.log(reference_period), np.log(mass_ratio)-np.log(reference_mass_ratio))
+        pdf = generate_gaussian_pdf(loc, width, np.linspace(0, 1, len(es)+1))
+        cdf = np.cumsum(pdf / np.sum(pdf))
+        return np.interp(np.random.rand(), cdf, es)
+    
     # choose which of the three eccentricity functions is called for
-    ecc_func = {"circular": circular_e, "thermal": thermal_e, "turnover": turnover_e,}.get(ecc_type, circular_e)
+    ecc_func = {"circular": circular_e, "thermal": thermal_e, "turnover": turnover_e, "dependant": dependant_eccentricity}.get(ecc_type, circular_e)
         
     # randomly select mass ratios, and then keep resampling
     # until they fall into the restricted range 
@@ -277,7 +294,15 @@ def create_synthetic_data(object_count, catalogue, f_gamma=None, dr4_mode=False,
     #     bad = fms > fm_max
 
     # --- eccentricities ---
-    ecc = np.array([ecc_func(lp) for lp in logP])
+    if ecc_type == "dependant":
+        if dependant_params is None:
+            raise ValueError("dependant_params must be provided for dependant eccentricity type")
+        ebar, sbar, alpha, beta, gamma, delta, eta, zeta, reference_mass, reference_period, reference_mass_ratio = dependant_params
+        ecc = np.array([dependant_eccentricity(ebar, sbar, alpha, beta, gamma, delta, eta, zeta, m2[i], period[i], m2[i]/mass[i], reference_mass, reference_period, reference_mass_ratio) for i in range(object_count)])
+    else:
+        ecc = np.array([ecc_func(lp) for lp in logP])
+    
+    ecc = np.clip(ecc, 0, 0.95)  # ensure eccentricities are in [0, 1)
     
     # --- orbital angles ---
     inc = random_inc(object_count)
